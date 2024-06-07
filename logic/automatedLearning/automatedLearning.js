@@ -2,177 +2,151 @@ import { UserProgress } from "@/models/userProgress";
 import { Course } from "@/models/course";
 import { Question } from "@/models/question";
 
-// Data Collection:
-//============================
+// to go through this algorithm that adds the difficulty level
 
-// Retrieve the student's incorrectly answered questions for the specified course.
-// Gather information about the subjects and questions within the course.
-
-export async function getAnsweredQuestions(userId, courseId) {
+async function selectQuestions(userId, courseId, totalQuestions) {
+  // getting the progress from the user
   const userProgress = await UserProgress.findOne({ userId }).populate({
-    path: "courses.courseId",
-    match: { courseId: courseId },
-    populate: {
-      path: "incorrectAnswers.questionId",
-      model: "Question",
-      populate: {
-        path: "subject",
-        model: "Subject",
-      },
-    },
+    path: "courses.courseId courses.incorrectAnswers.questionId",
   });
-  return userProgress.courses.find(
-    (course) => course.courseId._id.toString() === courseId
+
+  if (!userProgress) throw new Error("User progress not found.");
+  //getting all the courses from the progress by Course
+  const courseProgress = userProgress.courses.find((course) =>
+    course.courseId.equals(courseId)
   );
-}
+  if (!courseProgress) throw new Error("Course progress not found.");
 
-export async function getCourseDetails(courseId) {
-  return await Course.findById(courseId).populate("subjects");
-}
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  //getting only the incorrect answers from the last week
+  const recentIncorrectAnswers = courseProgress.incorrectAnswers.filter(
+    (incorrect) => incorrect.answeredAt >= oneWeekAgo
+  );
 
-// Analyze Incorrect Answers:
-//============================
+  const subjectFrequency = {};
+  const tagFrequencyBySubject = {};
+  const difficultySumBySubject = {};
+  const questionCountBySubject = {};
+  //looping the incorrect answers
+  recentIncorrectAnswers.forEach((incorrect) => {
+    const question = incorrect.questionId;
+    const subjectId = question.subject.toString();
+    //editing the amount of questions in each subject
+    subjectFrequency[subjectId] = (subjectFrequency[subjectId] || 0) + 1;
+    //the sum of difficulty level per subject
+    difficultySumBySubject[subjectId] =
+      (difficultySumBySubject[subjectId] || 0) + question.difficultyLevel;
+    // the count of questions per subject
+    questionCountBySubject[subjectId] =
+      (questionCountBySubject[subjectId] || 0) + 1;
+    //creating the mapping for Frequency of tags by questions
+    question.tags.forEach((tag) => {
+      if (!tagFrequencyBySubject[subjectId]) {
+        tagFrequencyBySubject[subjectId] = {};
+      }
+      tagFrequencyBySubject[subjectId][tag] =
+        (tagFrequencyBySubject[subjectId][tag] || 0) + 1;
+    });
+  });
 
-// Calculate the frequency and proportion of incorrect answers by subject.
-// Identify the most common tags within the incorrect answers, per subject.
+  const totalIncorrectAnswers = recentIncorrectAnswers.length;
+  //The amount of Questions needed for each subject
+  const questionsPerSubject = {};
 
-const analyzeIncorrectAnswers = (incorrectAnswers) => {
-  const subjectCount = {};
-  const tagCountBySubject = {};
-  let totalDifficulty = 0;
+  const preferredDifficultyBySubject = {};
 
-  incorrectAnswers.forEach((answer) => {
-    const question = answer.questionId;
-    const subject = question.subject.title;
-    const tags = question.tags;
+  for (const [subjectId, count] of Object.entries(subjectFrequency)) {
+    //Average difficulty acording to subject
+    const avgDifficulty =
+      difficultySumBySubject[subjectId] / questionCountBySubject[subjectId];
 
-    // Count subjects
-    if (!subjectCount[subject]) subjectCount[subject] = 0;
-    subjectCount[subject]++;
+    const preferredDifficulty = Math.floor(avgDifficulty) - 1;
+    //prefered dificulty level per subject
+    preferredDifficultyBySubject[subjectId] = preferredDifficulty;
 
-    // Count tags by subject
-    if (!tagCountBySubject[subject]) tagCountBySubject[subject] = {};
-    tags.forEach((tag) => {
-      if (!tagCountBySubject[subject][tag]) tagCountBySubject[subject][tag] = 0;
-      tagCountBySubject[subject][tag]++;
+    questionsPerSubject[subjectId] = Math.round(
+      (count / totalIncorrectAnswers) * totalQuestions
+    );
+  }
+  //========================== Question Selection ==================================
+  let selectedQuestions = [];
+  const selectedQuestionIds = new Set();
+  //loop threw subjects and the  amount of  questions
+
+  for (const [subjectId, count] of Object.entries(questionsPerSubject)) {
+    //Creating range for difficalty level
+    const preferredDifficulty = preferredDifficultyBySubject[subjectId];
+    const maxDifficulty = Math.min(5, preferredDifficulty + 1);
+    const minDifficulty = Math.max(1, preferredDifficulty);
+
+    //Selecting Questions by subject and difficulty range
+    const questionsForSubject = await Question.find({
+      subject: subjectId,
+      difficultyLevel: { $gte: minDifficulty, $lte: maxDifficulty },
     });
 
-    // Calculate total difficulty
-    totalDifficulty += question.difficultyLevel;
-  });
+    //making sure questions are unique and were not answered before
 
-  const avgDifficulty =
-    incorrectAnswers.length > 0 ? totalDifficulty / incorrectAnswers.length : 1;
-
-  return { subjectCount, tagCountBySubject, avgDifficulty };
-};
-
-//   Adjust Difficulty Level:
-//============================
-// Calculate the average difficulty level of the incorrectly answered questions.
-// Set a target difficulty level for the new questions.
-
-const adjustDifficultyLevel = (avgDifficulty) => {
-  return Math.max(1, avgDifficulty - 1); // Ensure difficulty doesn't drop below 1
-};
-
-// Question Selection:
-//============================
-// Filter the question bank for questions related to the most frequent subjects and tags.
-// Select questions based on the calculated proportions and target difficulty level.
-const selectQuestions = (
-  questionBank,
-  subjectCount,
-  tagCountBySubject,
-  targetDifficulty,
-  totalQuestions
-) => {
-  const selectedQuestions = [];
-  const subjectProportions = {};
-
-  // Calculate subject proportions
-  const totalIncorrect = Object.values(subjectCount).reduce(
-    (sum, count) => sum + count,
-    0
-  );
-  Object.keys(subjectCount).forEach((subject) => {
-    subjectProportions[subject] = Math.round(
-      (subjectCount[subject] / totalIncorrect) * totalQuestions
-    );
-  });
-
-  Object.keys(subjectProportions).forEach((subject) => {
-    const questionsForSubject = questionBank.filter(
+    const filteredQuestions = questionsForSubject.filter(
       (q) =>
-        q.subject.title === subject && q.difficultyLevel <= targetDifficulty
+        !courseProgress.correctAnswers.includes(q._id) &&
+        !recentIncorrectAnswers.some((incorrect) =>
+          incorrect.questionId.equals(q._id)
+        )
     );
-    const tagCount = tagCountBySubject[subject];
 
-    // Sort questions by tag frequency
-    questionsForSubject.sort((a, b) => {
+    const tagFrequency = tagFrequencyBySubject[subjectId] || {};
+
+    filteredQuestions.sort((a, b) => {
       const aTagScore = a.tags.reduce(
-        (score, tag) => score + (tagCount[tag] || 0),
+        (score, tag) => score + (tagFrequency[tag] || 0),
         0
       );
       const bTagScore = b.tags.reduce(
-        (score, tag) => score + (tagCount[tag] || 0),
+        (score, tag) => score + (tagFrequency[tag] || 0),
         0
       );
       return bTagScore - aTagScore;
     });
 
-    selectedQuestions.push(
-      ...questionsForSubject.slice(0, subjectProportions[subject])
+    let selectedForSubject = filteredQuestions.slice(0, count);
+
+    // making sure the right amount of questions will be generated
+
+    if (selectedForSubject.length < count) {
+      const expandedRangeQuestions = await Question.find({
+        subject: subjectId,
+        difficultyLevel: { $gte: minDifficulty, $lte: maxDifficulty + 1 },
+        _id: { $nin: selectedQuestionIds },
+      });
+
+      selectedForSubject = selectedForSubject.concat(
+        expandedRangeQuestions.slice(0, count - selectedForSubject.length)
+      );
+    }
+
+    selectedForSubject.forEach((q) => {
+      if (!selectedQuestionIds.has(q._id.toString())) {
+        selectedQuestions.push(q);
+        selectedQuestionIds.add(q._id.toString());
+      }
+    });
+  }
+
+  if (selectedQuestions.length < totalQuestions) {
+    const remainingQuestions = await Question.find({
+      _id: { $nin: Array.from(selectedQuestionIds) },
+      subject: { $in: Object.keys(subjectFrequency) },
+      difficultyLevel: { $gte: 1, $lte: 5 },
+    });
+
+    selectedQuestions = selectedQuestions.concat(
+      remainingQuestions.slice(0, totalQuestions - selectedQuestions.length)
     );
-  });
+  }
 
-  return selectedQuestions.slice(0, totalQuestions);
-};
-
-// ---------------optional --------------------
-
-//   Generate Personalized Explanations:
-//=======================================
-// Generate detailed explanations for each selected question
-
-const generateExplanations = (selectedQuestions) => {
-  return selectedQuestions.map((question) => {
-    const explanation = generateExplanation(question); // Placeholder function
-    return { question, explanation };
-  });
-};
-
-// Placeholder explanation generator
-const generateExplanation = (question) => {
-  return `Explanation for question ${
-    question._id
-  }: Review the concept of ${question.tags.join(", ")}.`;
-};
-
-// Example usage
-async function generateOptimalLearningSession(
-  userId,
-  courseId,
-  totalQuestions = 10
-) {
-  const courseData = await getAnsweredQuestions(userId, courseId);
-  const questionBank = await Question.find().populate("subject");
-
-  const { subjectCount, tagCountBySubject, avgDifficulty } =
-    analyzeIncorrectAnswers(courseData.incorrectAnswers);
-  const targetDifficulty = adjustDifficultyLevel(avgDifficulty);
-  const selectedQuestions = selectQuestions(
-    questionBank,
-    subjectCount,
-    tagCountBySubject,
-    targetDifficulty,
-    totalQuestions
-  );
-  const optimalLearningSession = generateExplanations(selectedQuestions);
-
-  return optimalLearningSession;
+  return selectedQuestions;
 }
 
-generateOptimalLearningSession("user123", "course456", 10).then((session) => {
-  console.log(session);
-});
+module.exports = { selectQuestions };
