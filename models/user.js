@@ -15,7 +15,13 @@ const userSchema = new mongoose.Schema(
     image: { type: String },
     address: { type: String },
     progress: { type: mongoose.Schema.Types.ObjectId, ref: "UserProgress" },
+    preferences: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "UserPreferences",
+    },
+    firstLogin: { type: Boolean, default: true },
   },
+
   { timestamps: true }
 );
 

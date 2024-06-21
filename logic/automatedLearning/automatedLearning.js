@@ -2,9 +2,7 @@ import { UserProgress } from "@/models/userProgress";
 import { Course } from "@/models/course";
 import { Question } from "@/models/question";
 
-// to go through this algorithm that adds the difficulty level
-
-async function selectQuestions(userId, courseId, totalQuestions) {
+export async function selectQuestions(userId, courseId, totalQuestions) {
   // getting the progress from the user
   const userProgress = await UserProgress.findOne({ userId }).populate({
     path: "courses.courseId courses.incorrectAnswers.questionId",
@@ -57,12 +55,12 @@ async function selectQuestions(userId, courseId, totalQuestions) {
   const preferredDifficultyBySubject = {};
 
   for (const [subjectId, count] of Object.entries(subjectFrequency)) {
-    //Average difficulty acording to subject
+    //Average difficulty according to subject
     const avgDifficulty =
       difficultySumBySubject[subjectId] / questionCountBySubject[subjectId];
 
     const preferredDifficulty = Math.floor(avgDifficulty) - 1;
-    //prefered dificulty level per subject
+    //preferred difficulty level per subject
     preferredDifficultyBySubject[subjectId] = preferredDifficulty;
 
     questionsPerSubject[subjectId] = Math.round(
@@ -72,10 +70,10 @@ async function selectQuestions(userId, courseId, totalQuestions) {
   //========================== Question Selection ==================================
   let selectedQuestions = [];
   const selectedQuestionIds = new Set();
-  //loop threw subjects and the  amount of  questions
+  //loop through subjects and the amount of questions
 
   for (const [subjectId, count] of Object.entries(questionsPerSubject)) {
-    //Creating range for difficalty level
+    //Creating range for difficulty level
     const preferredDifficulty = preferredDifficultyBySubject[subjectId];
     const maxDifficulty = Math.min(5, preferredDifficulty + 1);
     const minDifficulty = Math.max(1, preferredDifficulty);
@@ -87,7 +85,6 @@ async function selectQuestions(userId, courseId, totalQuestions) {
     });
 
     //making sure questions are unique and were not answered before
-
     const filteredQuestions = questionsForSubject.filter(
       (q) =>
         !courseProgress.correctAnswers.includes(q._id) &&
@@ -113,12 +110,11 @@ async function selectQuestions(userId, courseId, totalQuestions) {
     let selectedForSubject = filteredQuestions.slice(0, count);
 
     // making sure the right amount of questions will be generated
-
     if (selectedForSubject.length < count) {
       const expandedRangeQuestions = await Question.find({
         subject: subjectId,
         difficultyLevel: { $gte: minDifficulty, $lte: maxDifficulty + 1 },
-        _id: { $nin: selectedQuestionIds },
+        _id: { $nin: Array.from(selectedQuestionIds) }, // Ensure valid array
       });
 
       selectedForSubject = selectedForSubject.concat(
@@ -136,7 +132,7 @@ async function selectQuestions(userId, courseId, totalQuestions) {
 
   if (selectedQuestions.length < totalQuestions) {
     const remainingQuestions = await Question.find({
-      _id: { $nin: Array.from(selectedQuestionIds) },
+      _id: { $nin: Array.from(selectedQuestionIds) }, // Ensure valid array
       subject: { $in: Object.keys(subjectFrequency) },
       difficultyLevel: { $gte: 1, $lte: 5 },
     });
@@ -148,5 +144,3 @@ async function selectQuestions(userId, courseId, totalQuestions) {
 
   return selectedQuestions;
 }
-
-module.exports = { selectQuestions };

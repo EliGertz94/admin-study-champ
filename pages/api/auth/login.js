@@ -36,6 +36,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
+    console.log(user, "user at login endpoint ");
+
     // Start session
     const session = await getSession(req, res);
     session.userId = user._id;

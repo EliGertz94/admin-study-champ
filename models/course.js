@@ -8,6 +8,11 @@ const courseSchema = new mongoose.Schema({
   generalContent: { type: String }, // General content for the course
   picture: { type: String }, // URL to the picture for the course
   subjects: [{ type: mongoose.Schema.Types.ObjectId, ref: "Subject" }],
+  courseType: {
+    type: String,
+    enum: ["supplement", "full-course"],
+    required: true,
+  },
 });
 export const Course =
   mongoose.models?.Course || mongoose.model("Course", courseSchema);

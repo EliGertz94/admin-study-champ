@@ -1,18 +1,23 @@
 import React from "react";
 import styles from "@/ui/dashboard/courses/courses.module.css";
 import styles2 from "@/ui/dashboard/users/singleUser/singleUser.module.css";
-
 import Search from "@/ui/dashboard/search/search";
 import Link from "next/link";
 import Pagination from "@/ui/dashboard/pagination/pagination";
 import { deleteCourse } from "@/logic/course/courseLogic";
 import { fetchSubjects, getAllSubjects } from "@/logic/subject/subjectLogic";
-import { addQuestion } from "@/logic/questions/questionsLogic";
+import {
+  addAllQuestions,
+  addQuestion,
+  addContentQuestion,
+} from "@/logic/questions/questionsLogic";
+
 const Subjects = async ({ searchParams }) => {
   const q = searchParams?.q || "";
   const page = searchParams?.page || 1;
   const { count, subjects } = await fetchSubjects(q, page);
   const allSubjects = await getAllSubjects();
+
   return (
     <div className={styles.container}>
       <div className={styles.top}>
@@ -61,53 +66,103 @@ const Subjects = async ({ searchParams }) => {
       <Pagination count={count} />
 
       <br />
-      <h1>Add Question</h1>
+      <h1>Add Regular Question</h1>
       <br />
+      <AddRegularQuestionForm allSubjects={allSubjects} />
 
-      <form action={addQuestion} className={styles2.form}>
-        <label>Text math content inside \( \)</label>
-        <input required id="text" type="text" name="text" placeholder="title" />
+      <br />
+      <h1>Add Content Question</h1>
+      <br />
+      <AddContentQuestionForm allSubjects={allSubjects} />
+    </div>
+  );
+};
 
-        <label>options (option1,option2 ...) </label>
-        <textarea
-          required
-          id="options"
-          type="text"
-          name="options"
-          placeholder="options"
-        />
-        <label>Hint</label>
+const AddRegularQuestionForm = ({ allSubjects }) => {
+  return (
+    <form action={addQuestion} method="post" className={styles2.form}>
+      <input type="hidden" name="type" value="regular" />
 
-        <input required id="hint" type="text" name="hint" placeholder="hint" />
-        <label>Correct Answer</label>
-        <input
-          required
-          id="correctOptionIndex"
-          type="text"
-          name="correctOptionIndex"
-          placeholder="Correct Answer"
-        />
-        <label>tags</label>
-        <input
-          required
-          id="tags"
-          type="text"
-          name="tags"
-          placeholder="tag1,tag2,tag3,..."
-        />
+      <label>Text</label>
+      <input required id="text" type="text" name="text" placeholder="Text" />
 
-        <label>Add To Subject</label>
-        <select name="subject" id="subject">
-          {allSubjects.map((subject) => (
+      <label>Options (option1, option2 ...)</label>
+      <textarea
+        required
+        id="options"
+        type="text"
+        name="options"
+        placeholder="Options"
+      />
+
+      <label>Hint</label>
+      <input required id="hint" type="text" name="hint" placeholder="Hint" />
+
+      <label>Correct Answer</label>
+      <input
+        required
+        id="correctOptionIndex"
+        type="text"
+        name="correctOptionIndex"
+        placeholder="Correct Answer"
+      />
+
+      <label>Tags</label>
+      <input
+        required
+        id="tags"
+        type="text"
+        name="tags"
+        placeholder="tag1,tag2,tag3,..."
+      />
+
+      <label>Add To Subject</label>
+      <select name="subject" id="subject">
+        {allSubjects.map((subject) => (
+          <option key={subject._id} value={subject._id.toString()}>
+            {subject.title}
+          </option>
+        ))}
+      </select>
+
+      <button>Add Regular Question</button>
+    </form>
+  );
+};
+
+const AddContentQuestionForm = ({ allSubjects }) => {
+  return (
+    <form action={addContentQuestion} method="post" className={styles2.form}>
+      <input type="hidden" name="type" value="content" />
+
+      <label>Text</label>
+      <input required id="text" type="text" name="text" placeholder="Text" />
+
+      {/* <label>Hint</label>
+      <input required id="hint" type="text" name="hint" placeholder="Hint" /> */}
+
+      {/* <label>Tags</label>
+      <input
+        required
+        id="tags"
+        type="text"
+        name="tags"
+        placeholder="tag1,tag2,tag3,..."
+      /> */}
+
+      <label>Add To Subject</label>
+      <select name="subject" id="subject">
+        {allSubjects.map((subject) => (
+          <div>
             <option key={subject._id} value={subject._id.toString()}>
               {subject.title}
             </option>
-          ))}
-        </select>
+          </div>
+        ))}
+      </select>
 
-        <button>Add</button>
-      </form>
-    </div>
+      <button>Add Content Question</button>
+    </form>
   );
 };
 
